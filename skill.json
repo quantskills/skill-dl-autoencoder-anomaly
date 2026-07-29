@@ -1,0 +1,12 @@
+{
+  "name": "skill-dl-autoencoder-anomaly",
+  "description": "深度自编码器无监督异常检测：每日盘后对沪深300成分股用最近60日窗口重训一个MLP自编码器，输出T日重建误差Top-10异常股（CSV + Markdown）。",
+  "tags": ["quant", "anomaly", "autoencoder", "deep-learning", "csi300"],
+  "version": "0.1.0",
+  "author": "forest808",
+  "scripts": {
+    "scan": "scripts/scan.py"
+  },
+  "data_source": "panda_data",
+  "asset_type": "stock"
+}
