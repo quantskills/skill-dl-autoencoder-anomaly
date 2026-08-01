@@ -1,15 +1,23 @@
 ---
 name: skill-dl-autoencoder-anomaly
-description: 深度自编码器无监督异常检测。每日盘后对沪深300成分股用最近60日窗口重训一个MLP自编码器，输出T日重建误差Top-10异常股（CSV + Markdown）。
+description: 深度自编码器无监督异常检测 —— 用户问「今天哪些股票走势最异常」「沪深300 异常股」「AE 跑一下」「找不像自己往常样子的股票」类问题时触发。对沪深300成分股用最近60日窗口重训一个MLP自编码器，输出T日重建误差Top-10异常股，按「样式② 结构化播报」呈现。
 tags: [quant, anomaly, autoencoder, deep-learning, csi300]
 ---
 
 # 深度自编码器 · 沪深300 无监督异常检测
 
-## 适用场景
-- 每日盘后想快速看"今天沪深300里哪几只股票的走势最不像自己往常的样子"
-- 想用无监督方式挖掘"看不出具体理由但市场行为异常"的个股
-- 想跟踪某个日期的沪深300横截面中最偏离平均画像的异常股
+## 何时触发本 skill
+
+用户提问命中下列语义时，自动调用：
+
+- 「今天/YYYYMMDD 哪些股票走势最异常」「沪深300 异常股」
+- 「跑一下 AE / autoencoder 异常检测」
+- 「找不像自己往常样子的股票」「行为异常的个股」
+- 「今天有没有偏离画像的股票」
+
+**不触发**：单只股票的多空判断、需要基本面/新闻理由的异常、非 CSI300 池（v0.1 仅支持 CSI300）、涨跌停/龙虎榜等"官方"异常（本 skill 是无监督模型识别的行为异常，不融合官方名单）。
+
+**⚠️ 触发前须知**：本 skill 每次调用会**重新训练一个 MLP AE**（60 交易日窗口，MPS 上 30 epoch 约 30 秒~2 分钟）。Agent 应告知用户"这会训一个模型,约 1 分钟左右",避免用户以为卡死。
 
 ## 数据接口（panda_data）
 
@@ -79,6 +87,129 @@ tags: [quant, anomaly, autoencoder, deep-learning, csi300]
 - 训练集/验证集 80/20 随机划分
 - 随机种子固定 `--seed 42`，`torch.manual_seed + numpy.random.seed`
 
+## Agent 触发流程（本 skill 的正式用法）
+
+用户提问命中「何时触发」后，按四步执行：
+
+### Step 1 · 决定扫描日期 + 提前告知耗时
+
+- 用户明说了日期 → 换算为 `YYYYMMDD` 用作 `--date`
+- 用户没说 → 省略 `--date`，让 scan 自动取最近交易日
+- **调用前先告诉用户**："这会在 MPS/CPU 上训一个 60 日窗口的 AE，约 30 秒~2 分钟，稍等。"
+
+### Step 2 · 调用（推荐一行）
+
+```bash
+cd /Users/since/Code/quantskills/skill-dl-autoencoder-anomaly && \
+set -a && source ~/.zshrc >/dev/null 2>&1 && set +a && \
+/opt/miniconda3/envs/pandaai/bin/python scripts/scan.py [--date YYYYMMDD] --seed 42
+```
+
+- 环境是 conda `pandaai`（Python 3.10，`panda_data` + `torch` 已装）
+- **`--seed 42` 保持默认**，保证同一日期重复调用结果一致（v0.1.0 复现性已验证）
+- 训练不落盘 checkpoint，每次都从头训（v0.2 计划支持缓存）
+- exit code：0 OK / 1 panda_data 异常 / 2 该日无数据 / 3 池空 / 4 字段自检失败
+
+### Step 3 · 读取输出
+
+产物固定在两个位置：
+
+- `output/anomaly_YYYYMMDD.csv` —— Top-N 全字段，含 `detail_json` 里的 per-feature MSE
+- `output/anomaly_YYYYMMDD.md` —— Top-10 表 + 训练元信息 + 主导特征分布
+
+**直接读 `.md`** 拿排行，需要 per-feature MSE 明细再看 `.csv`。
+
+### Step 4 · 用「样式② 结构化播报」呈现
+
+**不要**把 CSV 路径丢给用户，也**不要**贴 markdown 原文。按固定五段呈现：
+
+```
+AE 异常检测 · 沪深300 · YYYYMMDD（参训 N 只，训练窗口 T-60 → T-1）
+
+▎主线判断：<一句话，见下表>
+
+▎最异常 Top 5（按重建误差降序）
+- <symbol> <name>：error=X.XXX，主导特征 <feat_name>，T 日收益 +X.XX%，换手 X.X%
+- <symbol> <name>：error=X.XXX，主导特征 <feat_name>，...
+- <symbol> <name>：error=X.XXX，主导特征 <feat_name>，...
+- ...共 5 只
+
+▎主导特征分布（Top 10 里最常见的异常维度）
+- <feat>：X/10   <feat>：X/10   <feat>：X/10
+
+▎训练元信息
+- 训练样本：N 条 · 验证 MSE：X.XXXX · 设备：mps / cpu · epoch：X
+
+▎异常方向解读（对 Top 3 各写一句）
+- <symbol>：<主导特征> 突出，通常意味着 <见特征→现象映射表>
+```
+
+**主线判断话术表**：
+
+| 场景 | 话术 |
+|---|---|
+| Top 10 主导特征集中在 `dist_limit_up` (≥5/10) | 「多股接近涨停,情绪面驱动的异常」 |
+| Top 10 主导特征集中在 `turnover` (≥5/10) | 「今日异常主要由换手率放大驱动,资金活跃度突增」 |
+| Top 10 主导特征集中在 `amplitude` / `ret` | 「今日异常主要是价格振幅/收益极端,警惕复权跳变污染榜单」 |
+| Top 10 主导特征分散(无一个 ≥4/10) | 「异常成因分散,无单一主导模式」 |
+| 验证 MSE > 0.30 | 「模型欠拟合(val_MSE 偏高),异常分数需谨慎解读」 |
+
+**特征 → 现象映射表**（Step 4 里"异常方向解读"用这个）：
+
+| 主导特征 | 常见现象 |
+|---|---|
+| `dist_limit_up` | 距涨停很近或已涨停,情绪推动 |
+| `dist_limit_down` | 距跌停很近或已跌停,风险释放 |
+| `turnover` | 换手率异常放大,资金进出剧烈 |
+| `amplitude` | 日内振幅极大,多空撕扯或消息面 |
+| `ret` | 单日收益极端,可能是消息面 or 复权跳变 |
+| `log_vol` | 成交量脱离历史区间 |
+| `gap` | 开盘跳空,隔夜消息面 |
+| `excess_ret` | 相对指数超额收益极端 |
+
+**⚠️ 复权跳变陷阱**（Agent 必须警觉）：
+
+v0.1.0 未做 `|ret| < 0.11` 过滤，若榜单中某只股票 `ret_T` 绝对值 > 0.11（A 股单日理论上限约 20%，>0.11 即异常）：
+
+- 显式提示："<symbol> 的 T 日收益 <值> 疑似复权跳变导致,非真实市场异常,建议忽略"
+- 例：20260729 榜单里国电电力 `ret_T=+318`、中国巨石 `+18.9`、兆易创新 `+4.27` 都是复权跳变污染，不是真实异常信号
+
+**数据侧特殊情况**：
+
+- **exit 1（panda_data 5xx）** → "panda_data 服务暂不可用,稍后再试"
+- **exit 3（池空）** → "该日无 CSI300 成分股数据,可能是非交易日"
+- **训练时间明显偏长（> 3 分钟）** → 可能是 CPU 兜底（MPS 不可用）,不影响结果但告知用户
+
+**收尾一句**（可选）：如果用户看起来还会追问，加"如需看某只股票的 per-feature 分解、换扫描日、或调 Top-N,告诉我"。
+
+## 参数调整（用户主动要求时才调）
+
+用户明确要求换指数、调窗口、放宽 Top-N 时，透传对应 CLI 参数：
+
+```bash
+python scripts/scan.py \
+    --date 20260729 \
+    --index 000300.SH \
+    --lookback 20 \
+    --train_days 60 \
+    --top_n 10 \
+    --epochs 50 \
+    --batch_size 256 \
+    --seed 42
+```
+
+否则一律用默认参数。
+
+## 开发者入口（不用于 Agent 触发路径）
+
+```bash
+# 字段自检（升级 panda_data 后手动跑一次）
+python -m scripts.data --self-check --date 20260729
+
+# 单元测试
+pytest tests/ -v
+```
+
 ## 输出结果
 
 **`output/anomaly_YYYYMMDD.csv`**（Top-N 每只股票一行）：
@@ -99,39 +230,6 @@ tags: [quant, anomaly, autoencoder, deep-learning, csi300]
 **排序**：按 `reconstruction_error` 降序，取 Top-N（默认 10）。
 
 **`output/anomaly_YYYYMMDD.md`**：Top-N 表 + 训练元信息 + 一句解读。
-
-## 使用方式
-
-```bash
-# 认证 & 环境（首次）
-conda activate pandaai
-pip install -r requirements.txt   # 注意 torch 会拉取 ~200MB
-export PANDA_DATA_USERNAME=...
-export PANDA_DATA_PASSWORD=...
-
-# 字段自检（首次使用 / panda_data 版本更新后跑一次）
-python -m scripts.data --self-check --date 20260729
-
-# 单日扫描 —— 默认最近交易日，默认 CSI300
-python scripts/scan.py
-
-# 指定日期
-python scripts/scan.py --date 20260729
-
-# 完整参数
-python scripts/scan.py \
-    --date 20260729 \
-    --index 000300.SH \
-    --lookback 20 \
-    --train_days 60 \
-    --top_n 10 \
-    --epochs 50 \
-    --batch_size 256 \
-    --seed 42
-
-# 单元测试
-pytest tests/ -v
-```
 
 ## 验收要求
 - **无未来函数**：训练集严格 `date < T`，`test_features.py::test_no_lookahead` 覆盖
