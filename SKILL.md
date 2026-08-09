@@ -19,6 +19,21 @@ tags: [quant, anomaly, autoencoder, deep-learning, csi300]
 
 **⚠️ 触发前须知**：本 skill 每次调用会**重新训练一个 MLP AE**（60 交易日窗口，MPS 上 30 epoch 约 30 秒~2 分钟）。Agent 应告知用户"这会训一个模型,约 1 分钟左右",避免用户以为卡死。
 
+## 依赖与可复验门禁
+
+- 运行时固定为 CPython 3.10；已验证版本见 `requirements.txt`，包含 `numpy`、`pandas`、`torch`、私有包 `panda_data` 和 `pytest`。
+- 执行 live scan 前先运行：
+  ```bash
+  /opt/miniconda3/envs/pandaai/bin/python -m scripts.check_env
+  ```
+  该命令不访问网络、不打印凭证值，只检查依赖、导入、Torch 设备和凭证变量是否存在。
+- 无凭证/无网络时，完整链路仍可复验：
+  ```bash
+  /opt/miniconda3/envs/pandaai/bin/python -m pytest tests/test_scan_e2e.py -v
+  ```
+  该测试实际执行扫描编排、特征工程、模型训练、打分以及 CSV/Markdown 输出，只 mock 远程 `panda_data` 数据边界。
+- 完整 live 验证步骤见 [`docs/verification.md`](docs/verification.md)。
+
 ## 数据接口（panda_data）
 
 | 接口 | 用途 | 关键字段 |
@@ -125,6 +140,13 @@ fi
 > 如果你还没有 panda_data 账号，需要先在 panda_data 官网注册。
 
 **如果输出 `OK: user=...`**：凭证具备，进入 Step 1。
+
+凭证通过后、正式扫描前，Agent 还必须执行环境自检；若自检报版本、导入或 Torch 错误，
+应先报告环境问题，不要开始训练：
+
+```bash
+/opt/miniconda3/envs/pandaai/bin/python -m scripts.check_env
+```
 
 ### Step 1 · 决定扫描日期 + 提前告知耗时
 
@@ -239,10 +261,16 @@ python scripts/scan.py \
 
 ```bash
 # 字段自检（升级 panda_data 后手动跑一次）
-python -m scripts.data --self-check --date 20260729
+/opt/miniconda3/envs/pandaai/bin/python -m scripts.data --self-check --date 20260729
+
+# 依赖 / import / Torch 设备自检
+/opt/miniconda3/envs/pandaai/bin/python -m scripts.check_env
 
 # 单元测试
-pytest tests/ -v
+/opt/miniconda3/envs/pandaai/bin/python -m pytest tests/ -v
+
+# 不依赖网络的全链路验证
+/opt/miniconda3/envs/pandaai/bin/python -m pytest tests/test_scan_e2e.py -v
 ```
 
 ## 输出结果
@@ -268,7 +296,9 @@ pytest tests/ -v
 
 ## 验收要求
 - **无未来函数**：训练集严格 `date < T`，`test_features.py::test_no_lookahead` 覆盖
-- **单元测试全通过**：`pytest tests/` 无失败，总数 ≥ 20
+- **单元测试全通过**：`python -m pytest tests/` 无失败
+- **环境自检通过**：`python -m scripts.check_env` 返回 0
+- **离线全链路通过**：`python -m pytest tests/test_scan_e2e.py` 返回 0，并产出非空 CSV + Markdown
 - **字段自检通过**：`python -m scripts.data --self-check --date <近期日>` 返回 0
 - **端到端跑通**：至少一个真实日期能产出 CSV + MD，Top-10 完整无 NaN
 - **训练可复现**：相同 `--seed` 两次运行的 Top-10 顺序完全一致

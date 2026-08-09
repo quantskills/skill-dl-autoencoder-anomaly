@@ -1,5 +1,8 @@
-pandas>=2.0
-numpy>=1.24
-torch>=2.0
-panda_data
-pytest>=7.0
+# Validated runtime: CPython 3.10 on the pandaai environment.
+# panda_data is a private package; it must be available through the configured
+# package index or pre-installed in the environment before running the live scan.
+numpy==1.26.4
+pandas==2.3.3
+torch==2.13.0
+panda_data==0.0.12
+pytest==9.0.2
