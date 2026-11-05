@@ -313,3 +313,7 @@ python scripts/scan.py \
 - 依赖 `get_factor` 的 `turnover` 与 `market_cap` 字段完整性；首次校准时若缺列，自动回退到 `get_stock_daily_post`（需要动手编辑 `scripts/data.py` 选择数据源）
 - **首次实测发现**：`get_factor` 实际不返回 `name` 列（文档写有但响应无），已从 `get_stock_daily_post` 补入。
 - **复权跳变未过滤**：若一段窗口内某股票经历除权除息或送股等极端调整，其 `ret`/`amplitude` 会出现异常大的数值（20260729 榜单 Top-2 国电电力 ret_T=318 即此类情形）。v0.2 计划在 `features.py` 增加 `|ret| < 0.11` 的软过滤，剔除明显的复权跳变样本。
+
+## Pandadata compatibility
+
+[Pandadata 1.0.6 compatibility](references/pandadata-compatibility.md) — exact SDK baseline, validation scope, and shared guidance for all supported agent runtimes.

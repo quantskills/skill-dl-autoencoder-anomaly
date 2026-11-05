@@ -4,5 +4,5 @@
 numpy==1.26.4
 pandas==2.3.3
 torch==2.13.0
-panda_data==0.0.12
+panda_data==1.0.6
 pytest==9.0.2

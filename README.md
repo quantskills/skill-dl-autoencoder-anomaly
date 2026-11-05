@@ -1,3 +1,9 @@
+## Pandadata 兼容说明
+
+[English](README.en.md)
+
+本项目正在迁移至 PandaData 1.0.6，离线验证与线上服务验证分别记录；不构成投资建议。项目原有用途与使用说明如下。
+
 # skill-dl-autoencoder-anomaly
 
 Claude Code skill for a daily post-market unsupervised anomaly detection on CSI300 constituents. A small MLP autoencoder is retrained every run on the trailing 60 trading days and scores today's 20-day windows by reconstruction error. See `SKILL.md` for full usage. Design lives in `docs/superpowers/specs/2026-07-30-dl-autoencoder-anomaly-design.md`; implementation plan in `docs/superpowers/plans/2026-07-30-dl-autoencoder-anomaly.md`.
@@ -49,3 +55,6 @@ test -s output/anomaly_20260729.md
 
 Outputs land in `output/anomaly_YYYYMMDD.csv` + `.md`. The complete verification runbook is
 in [`docs/verification.md`](docs/verification.md).
+
+
+Pandadata 兼容维护：[abgyjaguo](https://github.com/abgyjaguo)，保留原项目作者署名。
